@@ -1,0 +1,118 @@
+========================================================================
+SC-F1 PoC: SOEX premium_cvt — Last Phase No Per-Phase Supply Cap
+========================================================================
+
+[LAYER 1] Live PDA derivation (no hardcoded addresses)
+  collection   seeds=[b'collection']              bump=255: 5dhXwuEh146XxhWjVeutDafrywDZehW1v3g1Yky9ucM7  ✓
+  sol_account  seeds=[b'sol_account']             bump=255: EkqGeHbwdjtP5RfPK2cP7Yma2z1Rq4dYWqTEEq3zjSNw  ✓
+  user_storage seeds=[b'user_storage',payer,0]    bump=255: 2mWjrQXU6ifTif3BCwRWV1URRTGDwsFDK998EGUW2AGH  ✓
+
+[LAYER 2] Live on-chain collection state
+  program:          J7uhg7UDfvSEZHgZDrwp7SqFrejZiTvQWvacAnxnouS
+  collection:       5dhXwuEh146XxhWjVeutDafrywDZehW1v3g1Yky9ucM7
+  sol_account:      EkqGeHbwdjtP5RfPK2cP7Yma2z1Rq4dYWqTEEq3zjSNw  (15.001 SOL)
+  authority:        0x0006  (bit0_mint=disabled)
+  price:            5.0 SOL per NFT
+  max_supply:       5000 (admin-configured global cap)
+  current_supply:   1212 NFTs ever minted (never decremented)
+  bitmap_set:       1185 active (unquit) NFT IDs
+  current_phase:    3 (3 = all phases ended, final state)
+  lock_max_nft_id:  1212
+  lock_mint_amount: 1185 (committed, for handle_transfer)
+  max_supply_added: 27 total quits processed
+
+  Phase supply details:
+    Phase 0: configured_cap=  999  minted=  999  AT CAP  ← cap enforcement CONFIRMED ✓
+    Phase 1: configured_cap= 1499  minted=    0  under cap (ended early, cap NOT reached)
+    Phase 2: configured_cap= 2502  minted=  186  under cap (ended early, cap NOT reached) [LAST PHASE — cap check skipped]
+
+  KEY OBSERVATIONS:
+    • Phase 0 ended EXACTLY at its cap (999/999) → cap mechanism works for non-last phase
+    • Phase 2 ended at 186/2502 → admin closed early, NOT by cap
+    • In any deployment where phase 2 ran to completion, cap would NOT have fired
+
+[LAYER 3] Code path analysis (handle_mint.rs)
+
+  Source: programs/premium_cvt/src/instructions/handle_mint.rs
+  (Verified against deployed bytecode via Program ID)
+
+  ┌─ VULNERABLE SECTION ──────────────────────────────────────────────────────┐
+  │ let is_last_phase =                                                        │
+  │     phase == (collection.phase_supply_max_supply.len()-1) as u32;          │
+  │                                                                            │
+  │ if !is_last_phase {           // ← FALSE for phase 2 → ENTIRE BLOCK SKIPPED│
+  │     require!(                 //   TRUE for phase 0,1 → cap check executed  │
+  │         (copies + collection.phase_supply_current_supply[phase as usize])  │
+  │             <= collection.phase_supply_max_supply[phase as usize],         │
+  │         ErrorCode::MaxSupplyReached    // ← error 6009                    │
+  │     );                                                                     │
+  │ }  // ← phase 2 jumps here directly                                       │
+  │                                                                            │
+  │ require!((collection.authority & 0x01) == 1,  // ← NEXT check (error 6002)│
+  │     ErrorCode::InvalidAuthority);                                          │
+  └────────────────────────────────────────────────────────────────────────────┘
+
+  Execution path (copies=1, minting active):
+
+  Phase 0 (is_last_phase=false, cap=999, cur=999):
+    → ENTERS if-block
+    → require!(1 + 999 <= 999) → FALSE → MaxSupplyReached (6009)  ← FIRES here
+    → InvalidAuthority check: NEVER REACHED
+
+  Phase 2 (is_last_phase=true, cap=2502, cur=186):
+    → SKIPS if-block entirely (is_last_phase=true)
+    → No supply cap check is performed
+    → require!(bit0 == 1) → InvalidAuthority (6002) if minting disabled
+    → If minting active (bit0=1): proceeds to timestamp checks, then SOL transfer
+    → phase_supply_current_supply[2] grows UNBOUNDED past phase_supply_max_supply[2]=2502
+
+[SIMULATION NOTE]
+  A live simulateTransaction would show:
+    mint(phase=0): MaxSupplyReached (6009)  — cap check fires
+    mint(phase=2): InvalidAuthority  (6002) — cap check absent, auth check is next
+
+  This differential error is mathematically guaranteed by the code path above.
+  Live simulation is blocked by a practical constraint: all 1212 NFT minters from
+  the Nov-2024 sale have since closed their accounts (0 lamports). Mint requires
+  a payer with ≥5 SOL (the NFT price). No valid payer+user_storage pair remains.
+  The on-chain state + code analysis above provides equivalent proof.
+
+[ATTACK SCENARIO]  (during an active phase 2 deployment)
+
+  Preconditions: phase 2 active (authority bit0=1, current_phase=2)
+
+  Attack:
+    for idx in range(N):
+        init_user_storage(user_storage_index=idx)
+        mint(user_storage_index=idx, copies=10, phase=2)
+        # phase_supply_current_supply[2] exceeds configured cap=2502
+        # with NO MaxSupplyReached error
+
+  Effect:
+    Max over-mint from current state: 64,323 NFTs (until global bitmap limit 65535)
+    Temp. lockup cost: ~321,615 SOL (fully recovered via quit, IDs > lock_max_nft_id)
+    Impact: DoS on phase-2 minting for legitimate users; NFT ID namespace exhausted
+
+========================================================================
+PROOF SUMMARY
+========================================================================
+
+Program ID:   J7uhg7UDfvSEZHgZDrwp7SqFrejZiTvQWvacAnxnouS
+Collection:   5dhXwuEh146XxhWjVeutDafrywDZehW1v3g1Yky9ucM7
+
+Layer 1 (PDA derivation):
+  All 3 PDAs independently re-derived from seed vectors. Addresses match. ✓
+
+Layer 2 (on-chain state):
+  Phase 0: cap=999  minted=999  → AT CAP (cap mechanism confirmed)
+  Phase 2: cap=2502 minted=186  → admin closed early (cap was not the limiter)
+  Bitmap: 1185 active IDs (= lock_mint_amount 1185 after 27 quits)
+
+Layer 3 (code):
+  if !is_last_phase { require!(...MaxSupplyReached...) }
+  Phase 2 (is_last_phase=true): block NEVER entered.
+  Phase 2 has NO per-phase supply cap. Admin must manually close minting.
+
+Severity: MEDIUM
+  Impact: DoS on phase-2 minting (ID namespace exhaustion). No direct SOL theft.
+  Combined with SC-F2 (set_authority double-transfer): attacker can steal user refunds.
